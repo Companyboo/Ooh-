@@ -11,11 +11,10 @@ env:
   ROOT_DIR_PREFIX: "OP13r-A15"
   BRANCH: "android14-6.1"
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  
+
 jobs:
   build-release:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -84,7 +83,7 @@ jobs:
           curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -s next
           git submodule update --init --recursive
           cd KernelSU-Next/kernel
-          KSU_VERSION=$(expr $(/usr/bin/git rev-list --count HEAD) "+" 10200)
+          KSU_VERSION=$(expr $(/usr/bin/git rev-list --count HEAD) + 10200)
           echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
           sed -i "s/DKSU_VERSION=11998/DKSU_VERSION=${KSU_VERSION}/" Makefile
 
@@ -151,7 +150,6 @@ jobs:
             "CONFIG_ARM64_CPUIDLE=y"
             "CONFIG_STRICT_DEVMEM=y"
             "CONFIG_IO_STRICT_DEVMEM=y"
-
             # Debugging Disables
             "CONFIG_DEBUG_KERNEL=n"
             "CONFIG_DETECT_HUNG_TASK=n"
@@ -194,7 +192,6 @@ jobs:
             "CONFIG_DEBUG_INFO=n"
             "CONFIG_ANDROID_DEBUG_SYMBOLS=n"
             "CONFIG_ANDROID_DEBUG_TRACE=n"
-
             # Added Battery/Performance Optimizations
             "CONFIG_CPU_INPUT_BOOST=y"
             "CONFIG_CPU_FREQ_BOOST_SW=y"
@@ -234,15 +231,21 @@ jobs:
           sed -i 's/-dirty//' ./build/kernel/kleaf/workspace_status_stamp.py || echo "No workspace_status_stamp.py to clean"
       
       - name: Build Kernel
-        working-directory: builds/${{ env.ROOT_DIR }}/kernel_platform/oneplus13r_v/kernel_platform
+        working-directory: builds/${{ env.ROOT_DIR }}/kernel_platform/oneplus13r_v/
         run: |
-          export BUILD_DIR=$(pwd)
-          python3 build_with_bazel.py \
-            --jobs $(nproc --all) \
-            --verbose \
-            --lto \
-            -j$(nproc) \
-            || { echo "Kernel build failed"; exit 1; }
+          cd kernel_platform
+          mkdir out
+          export PATH="/usr/lib/ccache:$PATH"
+          ./build_with_bazel.py \
+            -t pineapple \
+            gki \
+            --jobs=$(nproc --all) \
+            --verbose_failures \
+            --config=stamp \
+            --user_kmi_symbol_lists=//msm-kernel:android/abi_gki_aarch64_qcom \
+            --ignore_missing_projects \
+            --lto=thin \
+            -o "$(pwd)/out" || { echo "Bazel build failed"; exit 1; }
 
       - name: Create ZIP Package
         working-directory: builds/${{ env.ROOT_DIR }}/AnyKernel3
