@@ -11,6 +11,7 @@ env:
   ROOT_DIR_PREFIX: "OP13r-A15"
   BRANCH: "android14-6.1"
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  ENABLE_LTO: "true"  # Set to "false" if you want to disable LTO
 
 jobs:
   build-release:
@@ -22,14 +23,14 @@ jobs:
         with:
           fetch-depth: 1
 
-      # 2. Free up disk space (ensures sufficient disk space)
+      # 2. Free up disk space
       - name: Free Disk Space
         run: |
           sudo apt-get update -qq
           sudo apt-get install -qq curl
           curl -fsSL https://raw.githubusercontent.com/kou/arrow/e49d8ae15583ceff03237571569099a6ad62be32/ci/scripts/util_free_space.sh | bash
 
-      # 3. Install required system packages (combine updates to minimize repetition)
+      # 3. Install required system packages
       - name: Setup Build Environment
         run: |
           sudo apt-get update
@@ -38,7 +39,7 @@ jobs:
             bc bison flex libssl-dev libelf-dev wget build-essential \
             python3-dev python3-setuptools rsync ccache cmake libdw-dev zlib1g-dev
 
-      # 4. Configure ccache to speed up recompilations
+      # 4. Configure ccache
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
@@ -64,7 +65,7 @@ jobs:
           mkdir -p "builds/${ROOT_DIR}"
           cd "builds/${ROOT_DIR}"
 
-      # 7. Clone required repositories (using shallow clone for speed)
+      # 7. Clone required repositories
       - name: Clone Required Repositories
         working-directory: builds/${{ env.ROOT_DIR }}
         run: |
@@ -88,32 +89,29 @@ jobs:
           repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags || { echo "Failed to sync repo"; exit 1; }
           rm -rf ./kernel_platform/common/android/abi_gki_protected_exports_*
 
-      # 9. Setup KernelSU (fetch, update submodules, and adjust versioning)
+      # 9. Setup KernelSU
       - name: Setup KernelSU
         working-directory: builds/${{ env.ROOT_DIR }}/kernel_platform/oneplus13r_v/kernel_platform
         run: |
           curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -s next
           git submodule update --init --recursive
           cd KernelSU-Next/kernel
-          # Calculate KSU version based on commit count
           KSU_VERSION=$(expr $(/usr/bin/git rev-list --count HEAD) + 10200)
           echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
           sed -i "s/DKSU_VERSION=11998/DKSU_VERSION=${KSU_VERSION}/" Makefile
 
-      # 10. Setup SUSFS (clone additional repositories, copy files, patch as needed)
+      # 10. Setup SUSFS
       - name: Setup SUSFS
         working-directory: builds/${{ env.ROOT_DIR }}/kernel_platform/oneplus13r_v/kernel_platform
         run: |
           set -euxo pipefail
           git clone https://gitlab.com/simonpunk/susfs4ksu.git -b gki-android14-6.1
           git clone https://github.com/WildPlusKernel/kernel_patches.git
-          # Copy SUSFS patches and files
           cp susfs4ksu/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch ./common/
           cp kernel_patches/next/0001-kernel-patch-susfs-v1.5.5-to-KernelSU-Next-v1.0.5.patch ./KernelSU-Next/
           cp kernel_patches/next/syscall_hooks.patch ./common/
           cp susfs4ksu/kernel_patches/fs/* ./common/fs/
           cp susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
-          # Apply patches in KernelSU and common directories
           cd ./KernelSU-Next
           patch -p1 < 0001-kernel-patch-susfs-v1.5.5-to-KernelSU-Next-v1.0.5.patch || true
           cd ../common
@@ -148,24 +146,19 @@ jobs:
             "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y"
             "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y"
             "CONFIG_KSU_SUSFS_SUS_SU=n"
-            # Filesystem
             "CONFIG_TMPFS_XATTR=y"
             "CONFIG_TMPFS_POSIX_ACL=y"
-            # Network
             "CONFIG_IP_NF_TARGET_TTL=y"
             "CONFIG_IP6_NF_TARGET_HL=y"
             "CONFIG_IP6_NF_MATCH_HL=y"
-            # Scheduler
             "CONFIG_SCHED_CLASS_EXT=y"
             "CONFIG_SMP=y"
             "CONFIG_CPU_FREQ_GOV_SCHEDUTIL=y"
             "CONFIG_MSM_PERFORMANCE=y"
-            # Power management
             "CONFIG_NO_HZ_IDLE=y"
             "CONFIG_PM_SLEEP_SMP=y"
             "CONFIG_ENERGY_MODEL=y"
             "CONFIG_PM_AUTOSLEEP=y"
-            # Disable excessive debugging features
             "CONFIG_DEBUG_KERNEL=n"
             "CONFIG_DYNAMIC_DEBUG=n"
             "CONFIG_DEBUG_INFO=n"
@@ -191,7 +184,7 @@ jobs:
           done
           sed -i '2s/check_defconfig//' ./common/build.config.gki
 
-      # 12. Run sed modifications to enable LTO and remove "-dirty" markers
+      # 12. Run sed modifications
       - name: Run sed Commands
         working-directory: builds/${{ env.ROOT_DIR }}/kernel_platform/oneplus13r_v/kernel_platform
         run: |
@@ -209,18 +202,34 @@ jobs:
           cd kernel_platform
           mkdir -p out
           export PATH="/usr/lib/ccache:$PATH"
-          ./build_with_bazel.py \
-            -t pineapple \
-            gki \
-            --jobs=$(nproc --all) \
-            --verbose_failures \
-            --config=stamp \
-            --user_kmi_symbol_lists=//msm-kernel:android/abi_gki_aarch64_qcom \
-            --ignore_missing_projects \
-            --lto=thin \
-            -o "$(pwd)/out" || { echo "Bazel build failed"; exit 1; }
 
-      # 14. Create the zip package containing the built kernel image
+          # Check if LTO is enabled
+          if [[ "$ENABLE_LTO" == "true" ]]; then
+            echo "Building with LTO enabled, disabling ccache."
+            ./build_with_bazel.py \
+              -t pineapple \
+              gki \
+              --jobs=$(nproc --all) \
+              --verbose_failures \
+              --config=stamp \
+              --user_kmi_symbol_lists=//msm-kernel:android/abi_gki_aarch64_qcom \
+              --ignore_missing_projects \
+              --lto=thin \
+              -o "$(pwd)/out" || { echo "Bazel build failed"; exit 1; }
+          else
+            echo "Building without LTO, using ccache."
+            ./build_with_bazel.py \
+              -t pineapple \
+              gki \
+              --jobs=$(nproc --all) \
+              --verbose_failures \
+              --config=stamp \
+              --user_kmi_symbol_lists=//msm-kernel:android/abi_gki_aarch64_qcom \
+              --ignore_missing_projects \
+              -o "$(pwd)/out" || { echo "Bazel build failed"; exit 1; }
+          fi
+
+      # 14. Create the zip package
       - name: Create ZIP Package
         working-directory: builds/${{ env.ROOT_DIR }}
         run: |
