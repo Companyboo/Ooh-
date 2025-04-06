@@ -257,7 +257,7 @@ jobs:
           fi
 
       - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: kernel
           path: builds/${{ env.ROOT_DIR }}/AnyKernel3/${ROOT_DIR}-kernel.zip
