@@ -77,9 +77,9 @@ jobs:
       
       - name: Add BBRV3
         run: |
-          echo "Add BBRV3"
-          cd "$CONFIG/kernel_platform"
-          cp /github.com/google/bbr/blob/v3/net/ipv4/tcp_bbr.c ./common/net/ipv4/          
+         echo "Adding BBRV3"
+         cd "$CONFIG/kernel_platform"   
+         curl -o ./common/net/ipv4/tcp_bbr.c https://raw.githubusercontent.com/google/bbr/v3/net/ipv4/tcp_bbr.c   
       
       - name: Add KernelSU-Next
         run: |
