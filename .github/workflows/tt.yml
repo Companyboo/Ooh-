@@ -79,7 +79,7 @@ jobs:
         run: |
           echo "Add BBRV3"
           cd "$CONFIG/kernel_platform"
-          cp /home/runner/work/Action-KernelSU-Next/Action-KernelSU-Next/bbr/net/ipv4/tcp_bbr.c ./common/net/ipv4/
+          cp /github.com/google/bbr/blob/v3/net/ipv4/tcp_bbr.c ./common/net/ipv4/          
       
       - name: Add KernelSU-Next
         run: |
