@@ -75,11 +75,10 @@ jobs:
           $REPO --version
           $REPO --trace sync -c -j$(nproc --all) --no-tags --fail-fast      
       
-      - name: Add BBRV3
+      - name: Apply BBRv3 Patch
         run: |
-         echo "Adding BBRV3"
-         cd "$CONFIG/kernel_platform"   
-         curl -o ./common/net/ipv4/tcp_bbr.c https://raw.githubusercontent.com/google/bbr/v3/net/ipv4/tcp_bbr.c   
+          wget https://github.com/Bouteillepleine/kernel_patches/raw/Bouteillepleine-patch-1/bbr/bbrv3-20250425-5.15%2B.patch -O bbrv3.patch
+          patch -p1 < bbrv3.patch   
       
       - name: Add KernelSU-Next
         run: |
